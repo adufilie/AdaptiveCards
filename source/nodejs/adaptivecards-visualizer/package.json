@@ -33,6 +33,7 @@
 	},
 	"dependencies": {
 		"adaptivecards": "latest",
+		"clipboard": "^2.0.1",
 		"markdown-it": "^8.4.0",
 		"monaco-editor": "^0.14.1"
 	}

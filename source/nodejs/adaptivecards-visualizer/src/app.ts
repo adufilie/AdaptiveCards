@@ -1,3 +1,4 @@
+import * as Clipboard from 'clipboard';
 import * as AdaptiveCards from "adaptivecards";
 import * as MarkdownIt from "markdown-it";
 import * as Constants from "./constants";
@@ -31,10 +32,11 @@ function setContent(element) {
 
 function renderCard(target: HTMLElement): HTMLElement {
     document.getElementById("errorContainer").hidden = true;
+    document.getElementById("csharp").innerText = "";
     lastValidationErrors = [];
 
     var json = JSON.parse(currentCardPayload);
-
+    document.getElementById("csharp").innerText = AdaptiveCards.adaptiveCardJsonToCSharp(json);
 
     // Show all Host Apps at once, not working yet (to test uncomment the - 1 below)
     if (hostContainerPicker.selectedIndex === hostContainerPicker.length /* -1 */) {
@@ -493,4 +495,6 @@ window.onload = () => {
     }
 
     loadMonacoEditor(adaptiveCardSchema, monacoEditorLoaded);
+
+    new Clipboard('.clipboard-button');
 };

@@ -359,6 +359,7 @@ export class CardDesigner {
     private _undoButton: ToolbarButton;
     private _redoButton: ToolbarButton;
     private _copyJSONButton: ToolbarButton;
+    private _copyCSButton: ToolbarButton;
 
     private prepareToolbar() {
         this._fullScreenButton = new ToolbarButton(
@@ -423,6 +424,9 @@ export class CardDesigner {
 
         this._copyJSONButton = new ToolbarButton("Copy JSON", "acd-icon-copy");
         this.toolbar.addElement(this._copyJSONButton);
+
+        this._copyCSButton = new ToolbarButton("Copy C#", "acd-icon-copy");
+        this.toolbar.addElement(this._copyCSButton);
 
         this._fullScreenHandler = new FullScreenHandler();
         this._fullScreenHandler.onFullScreenChanged = (isFullScreen: boolean) => {
@@ -735,9 +739,13 @@ export class CardDesigner {
         new Clipboard(
             this._copyJSONButton.renderedElement,
             {
-                text: function () {
-                    return JSON.stringify(this.card.toJSON(), null, 4);
-                }
+                text: () => JSON.stringify(this.card.toJSON(), null, 4)
+            });
+        
+        new Clipboard(
+            this._copyCSButton.renderedElement,
+            {
+                text: () => Adaptive.adaptiveCardJsonToCSharp(this.card.toJSON())
             });
         
         // Tool palette pane

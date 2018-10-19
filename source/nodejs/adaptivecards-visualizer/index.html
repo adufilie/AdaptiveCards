@@ -27,6 +27,8 @@
         
             <div style="display: none"><input type="file" id="filePicker"></div>
             <div id="loadSample" class="button w3-hide-small w3-hide-medium" style="margin-left: 4px;">Load from file...</div>
+
+            <div id="copyToClipboard" class="button clipboard-button" data-clipboard-target="#csharp">Copy C# to clipboard</div>
         </div>    
     
         <div class="w3-col s12 m6 l5">
@@ -51,6 +53,8 @@
         <h3>This gap is intentional on the standalone Visualizer</h3>
         <p>It accounts for the header when deployed to http://adaptivecards.io</p>
     </div>
+
+    <pre id="csharp"></pre>
 
 </body>
 </html>
