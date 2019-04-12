@@ -1,64 +1,83 @@
+type Converter = (value:any, lineSeparator?:string) => string;
 const indent = '    ';
-let assignClass = (className:string) => (json:object, lineSeparator:string):string => {
-    let spec = types[className];
+let capitalize = (name:string):string => name.charAt(0).toUpperCase() + name.slice(1);
+let enumeration = (enumType:string):Converter => (value:string) => `${enumType}.${capitalize(value)}`;
+let assignClass = (className:keyof typeof types):Converter => (json:object, lineSeparator:string):string => {
+    // if class not found, output a JToken to prevent data loss or crash
+    if (!types[className])
+        return jToken(json, lineSeparator);
+
+    var {type, ...spec} = types[className];
+    
+    // get specified props from json
     let entries = Object.keys(spec)
-        .filter(key => key != 'type' && !!json[key])
+        .filter(key => key != 'type' && json[key] != null)
         .map(key => `${indent}${capitalize(key)} = ${spec[key](json[key], lineSeparator + indent)},`);
 
-    if (spec.type)
+    // get extension data (unspecified props)
+    let rest;
+    for (let key in json)
     {
-        // get extension data (unspecified props)
-        let rest;
-        for (let key in json)
+        if (key != 'type' && !spec[key])
         {
-            if (key != 'type' && !spec[key])
-            {
-                rest = rest || {};
-                rest[key] = json[key];
-            }
+            rest = rest || {};
+            rest[key] = json[key];
         }
-        if (rest)
-            entries.push(`${indent}ExtensionData = ${dictionary(rest, lineSeparator + indent)}`);
     }
+    if (rest)
+        entries.push(`${indent}ExtensionData = ${dictionary("JToken", jToken)(rest, lineSeparator + indent)}`);
 
     return [
-        `new ${className} {`,
+        `new ${className}`,
+        '{',
         ...entries,
         '}'
     ].join(lineSeparator);
 };
-let typed = (json:{type:string}, lineSeparator:string) => assignClass(typeToClass[json.type])(json, lineSeparator);
-let primitive = JSON.stringify;
-let list = (className:string, convert:(item:any, lineSeparator:string)=>string) =>
-    (items:any[], lineSeparator:string) =>
-        [
-            '{',//`new List<${className}> {`,
-            ...items.map(item => `${indent}${convert(item, lineSeparator + indent)},`),
-            '}'
-        ].join(lineSeparator);
-let capitalize = (name:string) => name.charAt(0).toUpperCase() + name.slice(1);
-let enumeration = (enumType:string) => (value:string) => `${enumType}.${capitalize(value)}`;
-let version = (v: {major:number, minor:number} | string) => primitive(typeof v == 'string' ? v : `${v.major}.${v.minor}`);
-let jToken = (json:object, lineSeparator:string) => {
-    if (typeof json != 'object')
+let typed:Converter = (json:{type:string}, lineSeparator:string) => {
+    let className = typeToClass[json && json.type];
+    if (className)
+        return assignClass(className)(json, lineSeparator);
+    return jToken(json, lineSeparator);
+}
+let primitive:Converter = (value:any, lineSeparator?:string) => JSON.stringify(value);
+let version:Converter = (v: {major:number, minor:number} | string) => primitive(typeof v == 'string' ? v : `${v.major}.${v.minor}`);
+let jToken:Converter = (json:object, lineSeparator:string) => {
+    if (json == null || typeof json != 'object')
         return primitive(json);
     
     return [
-        'JToken.FromObject(new {',
+        'JToken.FromObject(new',
+        `${indent}{`,
         ...Object.keys(json)
-            .map(key => `${indent}${key} = ${primitive(json[key])},`),
-        '}'
+            .map(key => `${indent}${indent}${key} = ${primitive(json[key])},`),
+        `${indent}})`
     ].join(lineSeparator);
 };
-let dictionary = (json:object, lineSeparator:string) => {
-    return [
-        '{',//'new Dictionary<string, JToken> {',
-        ...Object.keys(json)
-            .map(key => `${indent}\{ ${primitive(key)}, ${jToken(json[key], lineSeparator + indent)} \},`),
-        '}'
-    ].join(lineSeparator);
-};
+let list = (className:string, convert:Converter):Converter =>
+    (items:any[], lineSeparator:string) =>
+        [
+            `new List<${className}>`,
+            '{',
+            ...items.map(item => `${indent}${convert(item, lineSeparator + indent)},`),
+            '}'
+        ].join(lineSeparator);
+let dictionary = (className:string, convert:Converter):Converter =>
+    (json:object, lineSeparator:string) => {
+        if (json == null)
+            return "null";
+        return [
+            `new Dictionary<string, ${className}>`,
+            '{',
+            ...Object.keys(json)
+                .map(key => `${indent}\{ ${primitive(key)}, ${convert(json[key], lineSeparator + indent)} \},`),
+            '}'
+        ].join(lineSeparator);
+    };
 
+type Spec = { type?:string } & { [key:string]:Converter };
+type SpecShim = { [key:string]:Converter|string };
+// base classes are defined first because they are extended in types dictionary below
 let CardElement = {
     id: primitive,
     speak: primitive,
@@ -71,37 +90,133 @@ let Input = {
     ...CardElement,
     id: primitive,
     value: primitive,
+    isRequired: primitive,
 };
 let Container = {
     ...CardElement,
     type: "Container",
     backgroundImage: jToken,
     style: primitive,
-    verticalContentAlignment: enumeration('VerticalAlignment'),
+    verticalContentAlignment: enumeration('VerticalContentAlignment'),
     selectAction: typed,
     items: list('CardElement', typed),
 };
-let types = {
+let ActionBase = {
+    id: primitive,
+    title: primitive,
+    speak: primitive,
+    isPrimary: primitive,
+    actionContext: assignClass('ActionContext'),
+};
+let types:{[className:string]:Spec} = {
+    AdaptiveCard: {
+        ...CardElement,
+        type: "AdaptiveCard",
+        id: primitive,
+        correlationId: primitive,
+        originator: primitive,
+        hideOriginalBody: primitive,
+        enableBodyToggling: primitive,
+        rtl: primitive,
+        expectedActors: list('string', primitive),
+        messageCardContext: assignClass('MessageCardContext'),
+        resources: jToken,
+        speak: primitive,
+        backgroundImage: jToken,
+        version: version,
+        minVersion: primitive,
+        fallbackText: primitive,
+        theme: primitive,
+        padding: jToken,
+        body: list('CardElement', typed),
+        actions: list('ActionBase', typed),
+        autoInvokeAction: typed,
+        autoInvokeOptions: assignClass('SwiftAutoInvokeOptions'),
+        requiredHostCapabilities: list('string', primitive),
+        requires: dictionary('string', primitive),
+    },
+    ActionContext: {
+        actionButtonId: primitive,
+    },
+    MessageCardContext: {
+        correlationId: primitive,
+        messageCardSource: primitive,
+        oamAppName: primitive,
+        messageCardStampingSource: primitive,
+        isRefreshCard: primitive,
+        isInsightShown: primitive,
+        isBodyHidden: primitive,
+        insightProviderRendered: primitive,
+        stampingCorrelationVector: primitive,
+        transactionContext: primitive,
+    },
+    SwiftAutoInvokeOptions: {
+        showCardOnFailure: primitive
+    },
+    ActionBase,
     CardElement,
     Container,
     Input,
-    SubmitAction: {
-        type: "Action.Submit",
-        data: jToken,
-        id: primitive,
-        title: primitive,
+    ActionSet: {
+        ...CardElement,
+        actions: list('ActionBase', assignClass('ActionBase'))
+    },
+    DisplayAppointmentFormAction: {
+        ...ActionBase,
+        type: "Action.DisplayAppointmentForm",
+        ItemId: primitive,
+    },
+    DisplayMessageFormAction: {
+        ...ActionBase,
+        type: "Action.DisplayMessageForm",
+        ItemId: primitive,
+    },
+    HttpHeader: {
+        name: primitive,
+        value: primitive,
+    },
+    HttpAction: {
+        ...ActionBase,
+        type: "Action.Http",
+        hideCardOnInvoke: primitive,
+        method: primitive,
+        url: primitive,
+        headers: list('HttpHeader', assignClass('HttpHeader')),
+        body: primitive,
+        requiredHostCapabilities: list('string', primitive),
+    },
+    InvokeAddInCommandAction: {
+        ...ActionBase,
+        type: "Action.InvokeAddInCommand",
+        AddInId: primitive,
+        DesktopCommandId: primitive,
+        InitializationContext: jToken,
     },
     OpenUrlAction: {
+        ...ActionBase,
         type: "Action.OpenUrl",
         url: primitive,
-        id: primitive,
-        title: primitive,
     },
     ShowCardAction: {
+        ...ActionBase,
         type: "Action.ShowCard",
         card: typed,
-        id: primitive,
-        title: primitive,
+    },
+    SubmitAction: {
+        ...ActionBase,
+        type: "Action.Submit",
+        data: jToken,
+    },
+    ToggleVisibilityAction: {
+        ...ActionBase,
+        type: "Action.ToggleVisibility",
+        targetElements: list('JToken', jToken),
+    },
+    TransactionAction: {
+        ...ActionBase,
+        type: "Action.Transaction",
+        AddInId: primitive,
+        InitializationContext: jToken,
     },
     BackgroundImage: {
         url: primitive,
@@ -125,6 +240,8 @@ let types = {
         ...CardElement,
         type: "ColumnSet",
         columns: list('Column', assignClass('Column')),
+        selectAction: typed,
+        padding: jToken,
     },
     Fact: {
         title: primitive,
@@ -142,14 +259,20 @@ let types = {
         altText: primitive,
         selectAction: typed,
         size: enumeration('ImageSize'),
+        pixelWidth: primitive,
+        pixelHeight: primitive,
+        width: primitive,
+        height: primitive,
         style: enumeration('ImageStyle'),
         url: primitive,
+        backgroundColor: primitive,
     },
     ImageSet: {
         ...CardElement,
         type: "ImageSet",
         images: list('Image', typed),
-        size: enumeration('ImageSize'),
+        imageSize: enumeration('ImageSize'),
+        size: enumeration('ImageSize'), // needed?
     },
     DateInput: {
         ...Input,
@@ -178,6 +301,7 @@ let types = {
         isMultiline: primitive,
         maxLength: primitive,
         placeholder: primitive,
+        style: enumeration('TextInputStyle'),
     },
     ToggleInput: {
         ...Input,
@@ -189,6 +313,8 @@ let types = {
     Choice: {
         title: primitive,
         value: primitive,
+        isSelected: primitive,
+        speak: primitive,
     },
     ChoiceSet: {
         ...Input,
@@ -198,16 +324,7 @@ let types = {
         placeholder: primitive,
         choices: list('Choice', assignClass('Choice'))
     },
-    AdaptiveCard: {
-        ...CardElement,
-        type: "AdaptiveCard",
-        version: version,
-        backgroundImage: jToken,
-        body: list('CardElement', typed),
-        actions: list('ActionBase', typed),
-        speak: primitive,
-    }
-};
+} as {[key:string]:SpecShim} as {[key:string]:Spec};
 let typeToClass = {};
 for (let className in types)
 {
